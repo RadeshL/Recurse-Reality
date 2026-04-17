@@ -23,22 +23,23 @@ export default function AnimatedEdge({
   const [animate, setAnimate] = useState(false);
 
   useEffect(() => {
-    if (data?.isActive) {
+    // Only animate when source node is active and edge is marked as active
+    if (data?.isActive && data?.sourceActive) {
       setAnimate(true);
     }
-  }, [data?.isActive]);
+  }, [data?.isActive, data?.sourceActive]);
 
   return (
     <BaseEdge
       path={edgePath}
       style={
-        data?.isActive
+        (data?.isActive && data?.sourceActive)
           ? {
               stroke: '#00ffcc',
               strokeWidth: 2,
               strokeDasharray: 1000,
               strokeDashoffset: 1000,
-              animation: 'draw 1s ease forwards',
+              animation: 'draw 5s ease forwards',
             }
           : {
               stroke: 'transparent', // <-- hides inactive edge completely

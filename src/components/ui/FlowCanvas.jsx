@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ReactFlow, applyNodeChanges, applyEdgeChanges, addEdge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import AnimatedEdge from './AnimatedEdge';
@@ -124,7 +124,8 @@ function generateNodesAndEdges(events) {
         id: event.id,
         position: pos,
         data: {
-          label: `sum(arr, ${event.l}, ${event.r})` 
+          label: `sum(arr, ${event.l}, ${event.r})`,
+          isActive: false
         },
         style: {
           background: '#1e293b',
@@ -157,6 +158,16 @@ export default function FlowCanvas() {
   const [edges, setEdges] = useState([]);
   const [events, setEvents] = useState([]);
   const [activeEdges, setActiveEdges] = useState(new Set());
+  const [activeNodes, setActiveNodes] = useState(new Set());
+  const activeNodesRef = useRef(new Set());
+
+  // Sync ref with state
+  useEffect(() => {
+    activeNodesRef.current = activeNodes;
+  }, [activeNodes]);
+
+  const EDGE_DURATION = 800;     // animation time
+  const NODE_DELAY = 150;        // delay before emitting next edge
 
   const onNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -170,57 +181,83 @@ export default function FlowCanvas() {
 
   const onConnect = useCallback(
     (params) =>
-        setEdges((eds) =>
+      setEdges((eds) =>
         addEdge(
-            {
+          {
             ...params,
             type: 'animatedEdge',
-            },
-            eds
+          },
+          eds
         )
-        ),
+      ),
     []
   );
 
+  const onEdgeAnimationComplete = useCallback((targetNodeId) => {
+    setActiveNodes(prev => new Set(prev).add(targetNodeId));
+  }, []);
+
   const playEvents = useCallback(async (events) => {
+    // Start with root node active
+    const rootEvent = events.find(e => e.type === "CALL" && e.parentId === null);
+    setActiveNodes(new Set([rootEvent.id]));
+    activeNodesRef.current = new Set([rootEvent.id]);
+
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
 
       if (e.type === "CALL" && e.parentId) {
-        const edgeId = `${e.parentId}-${e.id}`;
+        // Wait for parent node to be active before animating edge
+        while (!activeNodesRef.current.has(e.parentId)) {
+          await new Promise(res => setTimeout(res, 10));
+        }
 
+        const edgeId = `${e.parentId}-${e.id}`;
         setActiveEdges(prev => new Set([...prev, edgeId]));
+
+        // Wait for edge animation to complete
+        await new Promise(res => setTimeout(res, EDGE_DURATION));
+        
+        // Node receives signal here
+        onEdgeAnimationComplete(e.id);
+        
+        // Small controlled delay before emitting
+        await new Promise(res => setTimeout(res, NODE_DELAY));
       }
 
       if (e.type === "RETURN" && e.parentId) {
+        // For return edges, wait for child node to be active
+        while (!activeNodesRef.current.has(e.id)) {
+          await new Promise(res => setTimeout(res, 10));
+        }
+
         const edgeId = `${e.parentId}-${e.id}`;
-
-        // optional: reverse animation later
         setActiveEdges(prev => new Set([...prev, edgeId]));
-      }
 
-      // delay between steps
-      await new Promise(res => setTimeout(res, 600));
+        // Return edges don't need to activate parent (already active)
+        await new Promise(res => setTimeout(res, EDGE_DURATION));
+      }
     }
-  }, []);
+  }, [onEdgeAnimationComplete]);
 
   const handleRun = useCallback(() => {
     const events = [];
     nodeId = 0;
-    
+
     // Hardcoded input for the first function call
     const hardcodedArray = [1, 2, 3, 4, 5];
     buildTree(hardcodedArray, 0, hardcodedArray.length - 1, null, events);
-    
+
     console.log('Generated events:', events);
     setEvents(events);
-    
+
     const { nodes: generatedNodes, edges: generatedEdges } = generateNodesAndEdges(events);
     setNodes(generatedNodes);
     setEdges(generatedEdges);
-    
+
     // Start animation
     setActiveEdges(new Set());
+    setActiveNodes(new Set());
     playEvents(events);
   }, [playEvents]);
 
@@ -231,7 +268,7 @@ export default function FlowCanvas() {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, background: 'rgba(0,0,0,0.8)', padding: '10px', borderRadius: '8px' }}>
-        <button 
+        <button
           onClick={handleRun}
           style={{
             background: '#00ffcc',
@@ -246,8 +283,8 @@ export default function FlowCanvas() {
           Run sum([1,2,3,4,5], 0, 4)
         </button>
         <div style={{ color: '#fff', marginTop: '10px', fontSize: '12px' }}>
-          Events: {events.length}<br/>
-          Nodes: {nodes.length}<br/>
+          Events: {events.length}<br />
+          Nodes: {nodes.length}<br />
           Edges: {edges.length}
         </div>
       </div>
@@ -256,7 +293,9 @@ export default function FlowCanvas() {
         edges={edges.map(edge => ({
           ...edge,
           data: {
-            isActive: activeEdges.has(edge.id)
+            isActive: activeEdges.has(edge.id),
+            sourceActive: activeNodes.has(edge.source),
+            targetActive: activeNodes.has(edge.target)
           }
         }))}
         edgeTypes={edgeTypes}
