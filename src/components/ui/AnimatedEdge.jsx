@@ -29,20 +29,20 @@ export default function AnimatedEdge({
   }, [data?.isActive]);
 
   return (
-    <path
-      id={id}
-      d={edgePath}
-      stroke={data?.isActive ? '#00ffcc' : '#555'}
-      strokeWidth={2}
-      fill="none"
+    <BaseEdge
+      path={edgePath}
       style={
-        animate
+        data?.isActive
           ? {
+              stroke: '#00ffcc',
+              strokeWidth: 2,
               strokeDasharray: 1000,
               strokeDashoffset: 1000,
-              animation: 'draw 10s ease forwards',
+              animation: 'draw 1s ease forwards',
             }
-          : {}
+          : {
+              stroke: 'transparent', // <-- hides inactive edge completely
+            }
       }
     />
   );
