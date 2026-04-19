@@ -2,9 +2,14 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { ReactFlow, applyNodeChanges, applyEdgeChanges, addEdge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import AnimatedEdge from './AnimatedEdge';
+import CustomNode from './CustomNode';
 
 const edgeTypes = {
   animatedEdge: AnimatedEdge,
+};
+
+const nodeTypes = {
+  custom: CustomNode,
 };
 
 let nodeId = 0;
@@ -123,30 +128,44 @@ function generateNodesAndEdges(events) {
       nodes.push({
         id: event.id,
         position: pos,
+        type: 'custom',
         data: {
           label: `sum(arr, ${event.l}, ${event.r})`,
-          isActive: false
-        },
-        style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '2px solid #00ffcc',
-          borderRadius: '8px',
-          padding: '10px',
-          fontSize: '12px'
+          isActive: false,
+          value: null
         }
       });
 
-      // Create edges
+      // Create CALL edges
       if (event.parentId) {
         edges.push({
           id: `${event.parentId}-${event.id}`,
           source: event.parentId,
           target: event.id,
           type: 'animatedEdge',
-          animated: false
+          animated: false,
+          data: {
+            isReturn: false
+          }
         });
       }
+    }
+  });
+
+  // Create RETURN edges
+  events.forEach(event => {
+    if (event.type === "RETURN" && event.parentId) {
+      edges.push({
+        id: `${event.id}-${event.parentId}-return`,
+        source: event.id,
+        target: event.parentId,
+        type: 'animatedEdge',
+        animated: false,
+        data: {
+          isReturn: true,
+          value: event.value
+        }
+      });
     }
   });
 
@@ -159,12 +178,19 @@ export default function FlowCanvas() {
   const [events, setEvents] = useState([]);
   const [activeEdges, setActiveEdges] = useState(new Set());
   const [activeNodes, setActiveNodes] = useState(new Set());
+  const [nodeValues, setNodeValues] = useState({});
   const activeNodesRef = useRef(new Set());
+  const nodeValuesRef = useRef({});
+  const runIdRef = useRef(0);
 
-  // Sync ref with state
+  // Sync refs with state
   useEffect(() => {
     activeNodesRef.current = activeNodes;
   }, [activeNodes]);
+
+  useEffect(() => {
+    nodeValuesRef.current = nodeValues;
+  }, [nodeValues]);
 
   const EDGE_DURATION = 800;     // animation time
   const NODE_DELAY = 150;        // delay before emitting next edge
@@ -197,18 +223,24 @@ export default function FlowCanvas() {
     setActiveNodes(prev => new Set(prev).add(targetNodeId));
   }, []);
 
-  const playEvents = useCallback(async (events) => {
+  const playEvents = useCallback(async (events, runId) => {
     // Start with root node active
     const rootEvent = events.find(e => e.type === "CALL" && e.parentId === null);
     setActiveNodes(new Set([rootEvent.id]));
     activeNodesRef.current = new Set([rootEvent.id]);
+    setNodeValues({});
+    nodeValuesRef.current = {};
 
     for (let i = 0; i < events.length; i++) {
+      // STOP if new run started
+      if (runId !== runIdRef.current) return;
+      
       const e = events[i];
 
       if (e.type === "CALL" && e.parentId) {
         // Wait for parent node to be active before animating edge
         while (!activeNodesRef.current.has(e.parentId)) {
+          if (runId !== runIdRef.current) return;
           await new Promise(res => setTimeout(res, 10));
         }
 
@@ -217,25 +249,71 @@ export default function FlowCanvas() {
 
         // Wait for edge animation to complete
         await new Promise(res => setTimeout(res, EDGE_DURATION));
+        if (runId !== runIdRef.current) return;
         
         // Node receives signal here
         onEdgeAnimationComplete(e.id);
         
         // Small controlled delay before emitting
         await new Promise(res => setTimeout(res, NODE_DELAY));
+        if (runId !== runIdRef.current) return;
       }
 
       if (e.type === "RETURN" && e.parentId) {
         // For return edges, wait for child node to be active
         while (!activeNodesRef.current.has(e.id)) {
+          if (runId !== runIdRef.current) return;
           await new Promise(res => setTimeout(res, 10));
         }
 
-        const edgeId = `${e.parentId}-${e.id}`;
+        const edgeId = `${e.id}-${e.parentId}-return`;
+        
+        // Update edge to show moving value
+        setEdges(prev =>
+          prev.map(edge =>
+            edge.id === edgeId
+              ? {
+                  ...edge,
+                  data: {
+                    ...edge.data,
+                    isReturning: true,
+                    value: e.value,
+                  }
+                }
+              : edge
+          )
+        );
+
         setActiveEdges(prev => new Set([...prev, edgeId]));
 
-        // Return edges don't need to activate parent (already active)
-        await new Promise(res => setTimeout(res, EDGE_DURATION));
+        // Wait for animation to complete
+        await new Promise(res => setTimeout(res, 800));
+        if (runId !== runIdRef.current) return;
+
+        // Update parent node value and nodes in same closure
+        setNodeValues(prev => {
+          const newValue = (prev[e.parentId] || 0) + e.value;
+
+          // update nodes INSIDE same closure (important)
+          setNodes(nodes =>
+            nodes.map(node =>
+              node.id === e.parentId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      value: newValue
+                    }
+                  }
+                : node
+            )
+          );
+
+          return {
+            ...prev,
+            [e.parentId]: newValue
+          };
+        });
       }
     }
   }, [onEdgeAnimationComplete]);
@@ -258,7 +336,26 @@ export default function FlowCanvas() {
     // Start animation
     setActiveEdges(new Set());
     setActiveNodes(new Set());
-    playEvents(events);
+    
+    // FORCE RESET synchronously
+    setNodeValues(() => ({}));
+    nodeValuesRef.current = {};
+    
+    // ALSO reset node display
+    setNodes(prev =>
+      prev.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          value: null
+        }
+      }))
+    );
+    
+    runIdRef.current += 1;
+    const currentRunId = runIdRef.current;
+    
+    playEvents(events, currentRunId);
   }, [playEvents]);
 
   useEffect(() => {
@@ -295,9 +392,13 @@ export default function FlowCanvas() {
           data: {
             isActive: activeEdges.has(edge.id),
             sourceActive: activeNodes.has(edge.source),
-            targetActive: activeNodes.has(edge.target)
+            targetActive: activeNodes.has(edge.target),
+            isReturn: edge.data?.isReturn || false,
+            isReturning: edge.data?.isReturning || false,
+            value: edge.data?.value || ''
           }
         }))}
+        nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
