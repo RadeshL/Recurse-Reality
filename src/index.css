@@ -137,3 +137,28 @@
     stroke-dashoffset: 0;
   }
 }
+
+/* Remove borders and make ReactFlow transparent */
+* {
+  border: none !important;
+  outline: none !important;
+}
+
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+html, body, #root {
+  width: 100vw !important;
+  height: 100vh !important;
+}
+
+.react-flow {
+  background: transparent !important;
+}
+
+.react-flow__pane {
+  background: transparent !important;
+}

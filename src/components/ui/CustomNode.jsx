@@ -4,9 +4,13 @@ export default function CustomNode({ data }) {
   return (
     <div style={{ 
       position: 'relative',
-      background: '#1e293b',
+      background: '#000000',
       color: '#fff',
-      border: '2px solid #00ffcc',
+      borderColor: '#00ffcc',
+      borderWidth: '2px',
+      borderStyle: 'solid',
+      outline: '2px solid #00ffcc',
+      outlineOffset: '2px',
       borderRadius: '8px',
       padding: '10px',
       fontSize: '12px',

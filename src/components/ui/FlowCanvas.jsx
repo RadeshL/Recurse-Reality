@@ -3,6 +3,7 @@ import { ReactFlow, applyNodeChanges, applyEdgeChanges, addEdge } from '@xyflow/
 import '@xyflow/react/dist/style.css';
 import AnimatedEdge from './AnimatedEdge';
 import CustomNode from './CustomNode';
+import { GridPattern } from './grid-pattern';
 
 const edgeTypes = {
   animatedEdge: AnimatedEdge,
@@ -363,48 +364,79 @@ export default function FlowCanvas() {
   }, [handleRun]);
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, background: 'rgba(0,0,0,0.8)', padding: '10px', borderRadius: '8px' }}>
-        <button
-          onClick={handleRun}
-          style={{
-            background: '#00ffcc',
-            color: '#000',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
-        >
-          Run sum([1,2,3,4,5], 0, 4)
-        </button>
-        <div style={{ color: '#fff', marginTop: '10px', fontSize: '12px' }}>
-          Events: {events.length}<br />
-          Nodes: {nodes.length}<br />
-          Edges: {edges.length}
-        </div>
+    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+      {/* Background Layer */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: 'none',  // IMPORTANT: allows dragging nodes
+        backgroundColor: '#0a0a0a'  // Dark background
+      }}>
+        <GridPattern 
+          width={40} 
+          height={40} 
+          x={-1} 
+          y={-1} 
+          strokeDasharray="0" 
+          className="w-full h-full" 
+          stroke="#333"
+          strokeWidth="1"
+        />
       </div>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges.map(edge => ({
-          ...edge,
-          data: {
-            isActive: activeEdges.has(edge.id),
-            sourceActive: activeNodes.has(edge.source),
-            targetActive: activeNodes.has(edge.target),
-            isReturn: edge.data?.isReturn || false,
-            isReturning: edge.data?.isReturning || false,
-            value: edge.data?.value || ''
-          }
-        }))}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        fitView
-      />
+
+      {/* React Flow Layer */}
+      <div style={{
+        position: 'relative',
+        zIndex: 1,
+        width: '100%',
+        height: '100%'
+      }}>
+        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, background: 'rgba(0,0,0,0.8)', padding: '10px', borderRadius: '8px' }}>
+          <button
+            onClick={handleRun}
+            style={{
+              background: '#00ffcc',
+              borderColor: '#00ffcc',
+              borderWidth: '2px',
+              borderStyle: 'solid',
+              color: '#000',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            Run sum([1,2,3,4,5], 0, 4)
+          </button>
+          <div style={{ color: '#fff', marginTop: '10px', fontSize: '12px' }}>
+            Events: {events.length}<br />
+            Nodes: {nodes.length}<br />
+            Edges: {edges.length}
+          </div>
+        </div>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges.map(edge => ({
+            ...edge,
+            data: {
+              isActive: activeEdges.has(edge.id),
+              sourceActive: activeNodes.has(edge.source),
+              targetActive: activeNodes.has(edge.target),
+              isReturn: edge.data?.isReturn || false,
+              isReturning: edge.data?.isReturning || false,
+              value: edge.data?.value || ''
+            }
+          }))}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          fitView
+        />
+      </div>
     </div>
   );
 }
