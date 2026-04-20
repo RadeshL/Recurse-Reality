@@ -5,6 +5,8 @@ import AnimatedEdge from './AnimatedEdge';
 import CustomNode from './CustomNode';
 import { GridPattern } from './grid-pattern';
 import { supabase, emitEvent, createSession, fetchEvents } from '../../lib/supabase';
+import { projectState } from '../../lib/projector';
+import EventPanel from './EventPanel';
 
 const edgeTypes = {
   animatedEdge: AnimatedEdge,
@@ -216,15 +218,18 @@ function generateNodesAndEdges(events) {
 export default function FlowCanvas() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const [events, setEvents] = useState([]);
-  const [activeEdges, setActiveEdges] = useState(new Set());
-  const [activeNodes, setActiveNodes] = useState(new Set());
-  const [nodeValues, setNodeValues] = useState({});
-  const activeNodesRef = useRef(new Set());
-  const nodeValuesRef = useRef({});
-  const runIdRef = useRef(0);
+const [events, setEvents] = useState([]);
+const [activeEdges, setActiveEdges] = useState(new Set());
+const [activeNodes, setActiveNodes] = useState(new Set());
+const [nodeValues, setNodeValues] = useState({});
+const [selectedEventIndex, setSelectedEventIndex] = useState(null);
+const [eventPanel, setEventPanel] = useState(null); // removed extra state line
+const activeNodesRef = useRef(new Set());
+const nodeValuesRef = useRef({});
+const runIdRef = useRef(0);
 
-  // Sync refs with state
+// Sync refs with state
+// ...
   useEffect(() => {
     activeNodesRef.current = activeNodes;
   }, [activeNodes]);
@@ -427,6 +432,19 @@ export default function FlowCanvas() {
 
   }, [playEvents]);
 
+  // Time travel click handler
+  const handleEventClick = useCallback((index) => {
+    if (events.length === 0) return;
+    
+    const state = projectState(events, index);
+    setNodes(state.nodes);
+    setEdges(state.edges);
+    setNodeValues(state.nodeValues);
+    setActiveEdges(state.activeEdges);
+    setActiveNodes(state.activeNodes);
+    setSelectedEventIndex(index);
+  }, [events]);
+
   // Load events from database on mount (optional for replay)
   useEffect(() => {
     const loadFromDatabase = async () => {
@@ -446,79 +464,94 @@ export default function FlowCanvas() {
   }, [handleRun]);
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
-      {/* Background Layer */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 0,
-        pointerEvents: 'none',  // IMPORTANT: allows dragging nodes
-        backgroundColor: '#0a0a0a'  // Dark background
+    <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
+      {/* Main Content Area */}
+      <div style={{ 
+        flex: 1, 
+        position: 'relative', 
+        width: 'calc(100vw - 300px)', 
+        height: '100vh' 
       }}>
-        <GridPattern 
-          width={40} 
-          height={40} 
-          x={-1} 
-          y={-1} 
-          strokeDasharray="0" 
-          className="w-full h-full" 
-          stroke="#333"
-          strokeWidth="1"
-        />
+        {/* Background Layer */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: 'none',  // IMPORTANT: allows dragging nodes
+          backgroundColor: '#0a0a0a'  // Dark background
+        }}>
+          <GridPattern 
+            width={40} 
+            height={40} 
+            x={-1} 
+            y={-1} 
+            strokeDasharray="0" 
+            className="w-full h-full" 
+            stroke="#333"
+            strokeWidth="1"
+          />
+        </div>
+
+        {/* React Flow Layer */}
+        <div style={{
+          position: 'relative',
+          zIndex: 1,
+          width: '100%',
+          height: '100%'
+        }}>
+          <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, background: 'rgba(0,0,0,0.8)', padding: '10px', borderRadius: '8px' }}>
+            <button
+              onClick={handleRun}
+              style={{
+                background: '#00ffcc',
+                borderColor: '#00ffcc',
+                borderWidth: '2px',
+                borderStyle: 'solid',
+                color: '#000',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Run sum([1,2,3,4,5], 0, 4)
+            </button>
+            <div style={{ color: '#fff', marginTop: '10px', fontSize: '12px' }}>
+              Events: {events.length}<br />
+              Nodes: {nodes.length}<br />
+              Edges: {edges.length}
+            </div>
+          </div>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges.map(edge => ({
+              ...edge,
+              data: {
+                isActive: activeEdges.has(edge.id),
+                sourceActive: activeNodes.has(edge.source),
+                targetActive: activeNodes.has(edge.target),
+                isReturn: edge.data?.isReturn || false,
+                isReturning: edge.data?.isReturning || false,
+                value: edge.data?.value || ''
+              }
+            }))}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            fitView
+          />
+        </div>
       </div>
 
-      {/* React Flow Layer */}
-      <div style={{
-        position: 'relative',
-        zIndex: 1,
-        width: '100%',
-        height: '100%'
-      }}>
-        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, background: 'rgba(0,0,0,0.8)', padding: '10px', borderRadius: '8px' }}>
-          <button
-            onClick={handleRun}
-            style={{
-              background: '#00ffcc',
-              borderColor: '#00ffcc',
-              borderWidth: '2px',
-              borderStyle: 'solid',
-              color: '#000',
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            Run sum([1,2,3,4,5], 0, 4)
-          </button>
-          <div style={{ color: '#fff', marginTop: '10px', fontSize: '12px' }}>
-            Events: {events.length}<br />
-            Nodes: {nodes.length}<br />
-            Edges: {edges.length}
-          </div>
-        </div>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges.map(edge => ({
-            ...edge,
-            data: {
-              isActive: activeEdges.has(edge.id),
-              sourceActive: activeNodes.has(edge.source),
-              targetActive: activeNodes.has(edge.target),
-              isReturn: edge.data?.isReturn || false,
-              isReturning: edge.data?.isReturning || false,
-              value: edge.data?.value || ''
-            }
-          }))}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          fitView
-        />
-      </div>
+      {/* Event Timeline Panel */}
+      <EventPanel
+        events={events}
+        selectedEventIndex={selectedEventIndex}
+        onEventClick={handleEventClick}
+      />
     </div>
   );
 }
