@@ -4,6 +4,7 @@ import '@xyflow/react/dist/style.css';
 import AnimatedEdge from './AnimatedEdge';
 import CustomNode from './CustomNode';
 import { GridPattern } from './grid-pattern';
+import { supabase, emitEvent, createSession, fetchEvents } from '../../lib/supabase';
 
 const edgeTypes = {
   animatedEdge: AnimatedEdge,
@@ -15,10 +16,18 @@ const nodeTypes = {
 
 let nodeId = 0;
 
-function buildTree(arr, l, r, parentId = null, events = []) {
+async function buildTree(arr, l, r, parentId = null, events = [], sessionId = null, depth = 0) {
   const currentId = `node-${nodeId++}`;
 
   // EVENT: function call
+  const callEvent = {
+    type: "FunctionCalled",
+    node_id: currentId,
+    args: { l, r },
+    parent_event_id: parentId,
+    depth
+  };
+  
   events.push({
     type: "CALL",
     id: currentId,
@@ -27,7 +36,20 @@ function buildTree(arr, l, r, parentId = null, events = []) {
     parentId,
   });
 
+  // Emit to database
+  if (sessionId) {
+    await emitEvent(sessionId, callEvent);
+  }
+
   if (l === r) {
+    const returnEvent = {
+      type: "FunctionReturned",
+      node_id: currentId,
+      value: arr[l],
+      parent_event_id: parentId,
+      depth
+    };
+    
     events.push({
       type: "RETURN",
       id: currentId,
@@ -35,23 +57,41 @@ function buildTree(arr, l, r, parentId = null, events = []) {
       value: arr[l],
     });
 
+    // Emit to database
+    if (sessionId) {
+      await emitEvent(sessionId, returnEvent);
+    }
+
     return { value: arr[l], id: currentId };
   }
 
   const mid = Math.floor((l + r) / 2);
 
-  const left = buildTree(arr, l, mid, currentId, events);
-  const right = buildTree(arr, mid + 1, r, currentId, events);
+  const left = await buildTree(arr, l, mid, currentId, events, sessionId, depth + 1);
+  const right = await buildTree(arr, mid + 1, r, currentId, events, sessionId, depth + 1);
 
   const result = left.value + right.value;
 
   // EVENT: return
+  const returnEvent = {
+    type: "FunctionReturned",
+    node_id: currentId,
+    value: result,
+    parent_event_id: parentId,
+    depth
+  };
+  
   events.push({
     type: "RETURN",
     id: currentId,
     parentId,
     value: result,
   });
+
+  // Emit to database
+  if (sessionId) {
+    await emitEvent(sessionId, returnEvent);
+  }
 
   return { value: result, id: currentId };
 }
@@ -319,30 +359,41 @@ export default function FlowCanvas() {
     }
   }, [onEdgeAnimationComplete]);
 
-  const handleRun = useCallback(() => {
-    const events = [];
-    nodeId = 0;
-
-    // Hardcoded input for the first function call
-    const hardcodedArray = [1, 2, 3, 4, 5];
-    buildTree(hardcodedArray, 0, hardcodedArray.length - 1, null, events);
-
-    console.log('Generated events:', events);
-    setEvents(events);
-
-    const { nodes: generatedNodes, edges: generatedEdges } = generateNodesAndEdges(events);
-    setNodes(generatedNodes);
-    setEdges(generatedEdges);
-
-    // Start animation
+  const handleRun = useCallback(async () => {
+    // Reset UI immediately
     setActiveEdges(new Set());
     setActiveNodes(new Set());
-    
-    // FORCE RESET synchronously
     setNodeValues(() => ({}));
     nodeValuesRef.current = {};
     
-    // ALSO reset node display
+    // Create session
+    const hardcodedArray = [1, 2, 3, 4, 5];
+    const session = await createSession('sum', { arr: hardcodedArray });
+    const sessionId = session.id;
+
+    // Generate local events synchronously for UI
+    const localEvents = [];
+    nodeId = 0;
+
+    // WAIT for full tree to complete - CRITICAL FIX
+    await buildTree(
+      hardcodedArray,
+      0,
+      hardcodedArray.length - 1,
+      null,
+      localEvents,
+      null, // don't block UI with DB during recursion
+      0
+    );
+
+    console.log('Generated events:', localEvents);
+    setEvents(localEvents);
+
+    const { nodes: generatedNodes, edges: generatedEdges } = generateNodesAndEdges(localEvents);
+    setNodes(generatedNodes);
+    setEdges(generatedEdges);
+
+    // Reset node display
     setNodes(prev =>
       prev.map(node => ({
         ...node,
@@ -353,11 +404,42 @@ export default function FlowCanvas() {
       }))
     );
     
+    // Start animation immediately
     runIdRef.current += 1;
     const currentRunId = runIdRef.current;
     
-    playEvents(events, currentRunId);
+    playEvents(localEvents, currentRunId);
+
+    // Background DB write - SIDE EFFECT (non-blocking)
+    localEvents.forEach(event => {
+      emitEvent(sessionId, {
+        type: event.type === "CALL" ? "FunctionCalled" : "FunctionReturned",
+        node_id: event.id,
+        ...(event.type === "CALL"
+          ? { args: { l: event.l, r: event.r } }
+          : { value: event.value }),
+        parent_event_id: null, // NULL is fine for linear timeline
+        depth: 0
+      }).catch(error => {
+        console.error('Background DB write failed:', error);
+      });
+    });
+
   }, [playEvents]);
+
+  // Load events from database on mount (optional for replay)
+  useEffect(() => {
+    const loadFromDatabase = async () => {
+      try {
+        // For now, we'll create new sessions on each run
+        // Later you can implement session selection for replay
+      } catch (error) {
+        console.error('Error loading from database:', error);
+      }
+    };
+    
+    loadFromDatabase();
+  }, []);
 
   useEffect(() => {
     handleRun();
