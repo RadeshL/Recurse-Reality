@@ -218,18 +218,21 @@ function generateNodesAndEdges(events) {
 export default function FlowCanvas() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-const [events, setEvents] = useState([]);
-const [activeEdges, setActiveEdges] = useState(new Set());
-const [activeNodes, setActiveNodes] = useState(new Set());
-const [nodeValues, setNodeValues] = useState({});
-const [selectedEventIndex, setSelectedEventIndex] = useState(null);
-const [eventPanel, setEventPanel] = useState(null); // removed extra state line
-const activeNodesRef = useRef(new Set());
-const nodeValuesRef = useRef({});
-const runIdRef = useRef(0);
+  const [events, setEvents] = useState([]);
+  const [activeEdges, setActiveEdges] = useState(new Set());
+  const [activeNodes, setActiveNodes] = useState(new Set());
+  const [nodeValues, setNodeValues] = useState({});
+  const [selectedEventIndex, setSelectedEventIndex] = useState(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playSpeed, setPlaySpeed] = useState(300); // ms per step
+  const [isAnimating, setIsAnimating] = useState(false);
+  const activeNodesRef = useRef(new Set());
+  const nodeValuesRef = useRef({});
+  const runIdRef = useRef(0);
 
-// Sync refs with state
-// ...
+  // Sync refs with state
+  // ...
   useEffect(() => {
     activeNodesRef.current = activeNodes;
   }, [activeNodes]);
@@ -430,20 +433,156 @@ const runIdRef = useRef(0);
       });
     });
 
+    // Reset timeline state
+    setCurrentIndex(0);
+    setIsPlaying(false);
   }, [playEvents]);
 
-  // Time travel click handler
-  const handleEventClick = useCallback((index) => {
-    if (events.length === 0) return;
+  // HYBRID PLAYBACK ENGINE - playStep for animation
+  const playStep = useCallback(async (index) => {
+    if (index >= events.length || index < 0) return;
     
-    const state = projectState(events, index);
+    setIsAnimating(true);
+
+    const prevState = projectState(events, index - 1);
+    const event = events[index];
+
+    // Apply base state FIRST
+    setNodes(prevState.nodes);
+    setEdges(prevState.edges);
+    setNodeValues(prevState.nodeValues);
+    setActiveNodes(prevState.activeNodes);
+
+    // 🔥 CRITICAL: reset activeEdges completely
+    setActiveEdges(new Set());
+
+    // Now animate ONLY current event
+    if (event.type === "CALL") {
+      const edgeId = `${event.parentId}-${event.id}`;
+      
+      setActiveEdges(new Set([edgeId])); // ONLY current edge
+      
+      await new Promise(res => setTimeout(res, EDGE_DURATION));
+      
+      setActiveNodes(prev => new Set([...prev, event.id]));
+    }
+
+    if (event.type === "RETURN") {
+      const edgeId = `${event.id}-${event.parentId}-return`;
+
+      // mark edge as returning
+      setEdges(prev =>
+        prev.map(edge =>
+          edge.id === edgeId
+            ? {
+                ...edge,
+                data: {
+                  ...edge.data,
+                  isReturning: true,
+                  value: event.value
+                }
+              }
+            : edge
+        )
+      );
+
+      setActiveEdges(new Set([edgeId])); // ONLY current edge
+
+      await new Promise(res => setTimeout(res, EDGE_DURATION));
+
+      // update value AFTER animation
+      setNodeValues(prev => ({
+        ...prev,
+        [event.parentId]: (prev[event.parentId] || 0) + event.value
+      }));
+    }
+
+    setIsAnimating(false);
+  }, [events]);
+
+  // CORE PLAYBACK ENGINE - Async loop with playStep
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    let cancelled = false;
+
+    async function run() {
+      while (!cancelled && currentIndex < events.length - 1) {
+        // Play current event and advance
+        const nextIndex = currentIndex + 1;
+        await playStep(nextIndex);
+
+        if (cancelled) return;
+
+        // Update currentIndex after animation completes
+        setCurrentIndex(nextIndex);
+        
+        // Wait for state update to propagate
+        await new Promise(res => setTimeout(res, 50));
+        
+        // Additional delay between steps based on playSpeed
+        await new Promise(res => setTimeout(res, playSpeed));
+      }
+      
+      if (!cancelled) {
+        setIsPlaying(false);
+      }
+    }
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPlaying, currentIndex, playStep, events.length, playSpeed]);
+
+  // STATE APPLICATION - Only for non-playing scenarios (slider, click, rewind)
+  useEffect(() => {
+    if (events.length === 0 || isPlaying || isAnimating) return;
+
+    const state = projectState(events, currentIndex);
+
     setNodes(state.nodes);
     setEdges(state.edges);
     setNodeValues(state.nodeValues);
     setActiveEdges(state.activeEdges);
     setActiveNodes(state.activeNodes);
-    setSelectedEventIndex(index);
-  }, [events]);
+    setSelectedEventIndex(currentIndex);
+  }, [currentIndex, events, isPlaying, isAnimating]);
+
+  // TIMELINE CONTROLS
+  const handlePlay = () => {
+    setIsPlaying(true);
+  };
+
+  const handlePause = () => {
+    setIsPlaying(false);
+  };
+
+  const handleRewind = () => {
+    setIsPlaying(false);
+    setCurrentIndex(prev => Math.max(0, prev - 1));
+  };
+
+  const handleForward = () => {
+    setIsPlaying(false);
+    setCurrentIndex(prev => Math.min(events.length - 1, prev + 1));
+  };
+
+  const handleSpeedChange = (speed) => {
+    setPlaySpeed(speed);
+  };
+
+  const handleSliderChange = (e) => {
+    setIsPlaying(false);
+    setCurrentIndex(Number(e.target.value));
+  };
+
+  // Event panel click handler (updated)
+  const handleEventClick = useCallback((index) => {
+    setIsPlaying(false);
+    setCurrentIndex(index);
+  }, []);
 
   // Load events from database on mount (optional for replay)
   useEffect(() => {
@@ -499,7 +638,8 @@ const runIdRef = useRef(0);
           width: '100%',
           height: '100%'
         }}>
-          <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, background: 'rgba(0,0,0,0.8)', padding: '10px', borderRadius: '8px' }}>
+          <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, background: 'rgba(0,0,0,0.8)', padding: '15px', borderRadius: '8px', minWidth: '320px' }}>
+            {/* Run Button */}
             <button
               onClick={handleRun}
               style={{
@@ -512,15 +652,154 @@ const runIdRef = useRef(0);
                 padding: '8px 16px',
                 borderRadius: '4px',
                 cursor: 'pointer',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                marginBottom: '15px',
+                width: '100%'
               }}
             >
-              Run sum([1,2,3,4,5], 0, 4)
+              🔄 Run sum([1,2,3,4,5], 0, 4)
             </button>
-            <div style={{ color: '#fff', marginTop: '10px', fontSize: '12px' }}>
-              Events: {events.length}<br />
-              Nodes: {nodes.length}<br />
-              Edges: {edges.length}
+
+            {/* Timeline Controls */}
+            <div style={{ marginBottom: '15px' }}>
+              <div style={{ color: '#00ffcc', fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>
+                ⏱️ Timeline Controls
+              </div>
+              
+              {/* Play/Pause and Step Controls */}
+              <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+                <button
+                  onClick={isPlaying ? handlePause : handlePlay}
+                  disabled={isAnimating}
+                  style={{
+                    background: isAnimating ? '#666' : (isPlaying ? '#ff6b6b' : '#51cf66'),
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: isAnimating ? 'not-allowed' : 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    opacity: isAnimating ? 0.6 : 1
+                  }}
+                >
+                  {isPlaying ? '⏸ Pause' : '▶️ Play'}
+                </button>
+                
+                <button
+                  onClick={handleRewind}
+                  disabled={isAnimating}
+                  style={{
+                    background: isAnimating ? '#666' : '#4a90e2',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: isAnimating ? 'not-allowed' : 'pointer',
+                    fontSize: '12px',
+                    opacity: isAnimating ? 0.6 : 1
+                  }}
+                >
+                  ⏮ Back
+                </button>
+                
+                <button
+                  onClick={handleForward}
+                  disabled={isAnimating}
+                  style={{
+                    background: isAnimating ? '#666' : '#4a90e2',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: isAnimating ? 'not-allowed' : 'pointer',
+                    fontSize: '12px',
+                    opacity: isAnimating ? 0.6 : 1
+                  }}
+                >
+                  ⏭ Forward
+                </button>
+              </div>
+
+              {/* Speed Controls */}
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ color: '#fff', fontSize: '11px', marginBottom: '5px' }}>
+                  ⚡ Speed: {playSpeed}ms
+                </div>
+                <div style={{ display: 'flex', gap: '5px' }}>
+                  <button
+                    onClick={() => handleSpeedChange(600)}
+                    style={{
+                      background: playSpeed === 600 ? '#00ffcc' : '#666',
+                      color: playSpeed === 600 ? '#000' : '#fff',
+                      border: 'none',
+                      padding: '4px 8px',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '10px'
+                    }}
+                  >
+                    Slow
+                  </button>
+                  <button
+                    onClick={() => handleSpeedChange(300)}
+                    style={{
+                      background: playSpeed === 300 ? '#00ffcc' : '#666',
+                      color: playSpeed === 300 ? '#000' : '#fff',
+                      border: 'none',
+                      padding: '4px 8px',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '10px'
+                    }}
+                  >
+                    Normal
+                  </button>
+                  <button
+                    onClick={() => handleSpeedChange(100)}
+                    style={{
+                      background: playSpeed === 100 ? '#00ffcc' : '#666',
+                      color: playSpeed === 100 ? '#000' : '#fff',
+                      border: 'none',
+                      padding: '4px 8px',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      fontSize: '10px'
+                    }}
+                  >
+                    Fast
+                  </button>
+                </div>
+              </div>
+
+              {/* Timeline Slider */}
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ color: '#fff', fontSize: '11px', marginBottom: '5px' }}>
+                  📚 Timeline: {currentIndex} / {Math.max(0, events.length - 1)}
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.max(0, events.length - 1)}
+                  value={currentIndex}
+                  onChange={handleSliderChange}
+                  style={{
+                    width: '100%',
+                    height: '6px',
+                    background: '#333',
+                    outline: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer'
+                  }}
+                />
+              </div>
+
+              {/* Stats */}
+              <div style={{ color: '#fff', fontSize: '11px' }}>
+                Events: {events.length}<br />
+                Nodes: {nodes.length}<br />
+                Edges: {edges.length}
+              </div>
             </div>
           </div>
           <ReactFlow

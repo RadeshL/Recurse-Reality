@@ -72,6 +72,9 @@ export function projectState(events: Event[], uptoIndex: number): ProjectedState
             }
           });
         }
+        
+        // Mark CALL edge as active
+        state.activeEdges.add(edgeId);
       }
 
       // Mark node as active
