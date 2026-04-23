@@ -291,13 +291,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Vite**: Fast development build tool
 - **Tailwind CSS**: Utility-first CSS framework
 
-## 📞 Support
-
-For questions, issues, or contributions:
-- Create an issue in the repository
-- Check existing documentation
-- Review example implementations
-
----
-
 **Recurse-Reality** - Making recursion visible, one call at a time.
