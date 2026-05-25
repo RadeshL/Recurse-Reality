@@ -273,51 +273,89 @@ export default function FlowCanvas() {
   }, []);
 
   const playEvents = useCallback(async (events, runId) => {
-    // Start with root node active
-    const rootEvent = events.find(e => e.type === "CALL" && e.parentId === null);
-    setActiveNodes(new Set([rootEvent.id]));
-    activeNodesRef.current = new Set([rootEvent.id]);
+    if (events.length === 0) return;
+
+    setIsAnimating(true);
+    setCurrentIndex(0);
+    setSelectedEventIndex(0);
+
+    // Reset the visual state before the animation begins
+    setActiveEdges(new Set());
+    setActiveNodes(new Set());
+    activeNodesRef.current = new Set();
     setNodeValues({});
     nodeValuesRef.current = {};
 
+    setNodes(prev =>
+      prev.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          value: null
+        }
+      }))
+    );
+
+    setEdges(prev =>
+      prev.map(edge => ({
+        ...edge,
+        data: {
+          ...edge.data,
+          isReturning: false
+        }
+      }))
+    );
+
+    const rootEvent = events.find(e => e.type === "CALL" && e.parentId === null);
+    setActiveNodes(new Set([rootEvent.id]));
+    activeNodesRef.current = new Set([rootEvent.id]);
+
     for (let i = 0; i < events.length; i++) {
-      // STOP if new run started
-      if (runId !== runIdRef.current) return;
-      
+      // STOP if a newer run started
+      if (runId !== runIdRef.current) {
+        setIsAnimating(false);
+        return;
+      }
+
       const e = events[i];
 
       if (e.type === "CALL" && e.parentId) {
-        // Wait for parent node to be active before animating edge
         while (!activeNodesRef.current.has(e.parentId)) {
-          if (runId !== runIdRef.current) return;
+          if (runId !== runIdRef.current) {
+            setIsAnimating(false);
+            return;
+          }
           await new Promise(res => setTimeout(res, 10));
         }
 
         const edgeId = `${e.parentId}-${e.id}`;
         setActiveEdges(prev => new Set([...prev, edgeId]));
 
-        // Wait for edge animation to complete
         await new Promise(res => setTimeout(res, EDGE_DURATION));
-        if (runId !== runIdRef.current) return;
-        
-        // Node receives signal here
+        if (runId !== runIdRef.current) {
+          setIsAnimating(false);
+          return;
+        }
+
         onEdgeAnimationComplete(e.id);
-        
-        // Small controlled delay before emitting
         await new Promise(res => setTimeout(res, NODE_DELAY));
-        if (runId !== runIdRef.current) return;
+        if (runId !== runIdRef.current) {
+          setIsAnimating(false);
+          return;
+        }
       }
 
       if (e.type === "RETURN" && e.parentId) {
-        // For return edges, wait for child node to be active
         while (!activeNodesRef.current.has(e.id)) {
-          if (runId !== runIdRef.current) return;
+          if (runId !== runIdRef.current) {
+            setIsAnimating(false);
+            return;
+          }
           await new Promise(res => setTimeout(res, 10));
         }
 
         const edgeId = `${e.id}-${e.parentId}-return`;
-        
-        // Update edge to show moving value
+
         setEdges(prev =>
           prev.map(edge =>
             edge.id === edgeId
@@ -335,15 +373,15 @@ export default function FlowCanvas() {
 
         setActiveEdges(prev => new Set([...prev, edgeId]));
 
-        // Wait for animation to complete
         await new Promise(res => setTimeout(res, 800));
-        if (runId !== runIdRef.current) return;
+        if (runId !== runIdRef.current) {
+          setIsAnimating(false);
+          return;
+        }
 
-        // Update parent node value and nodes in same closure
         setNodeValues(prev => {
           const newValue = (prev[e.parentId] || 0) + e.value;
 
-          // update nodes INSIDE same closure (important)
           setNodes(nodes =>
             nodes.map(node =>
               node.id === e.parentId
@@ -358,13 +396,21 @@ export default function FlowCanvas() {
             )
           );
 
-          return {
+          const updated = {
             ...prev,
             [e.parentId]: newValue
           };
+          nodeValuesRef.current = updated;
+          return updated;
         });
       }
+
+      setCurrentIndex(i);
+      setSelectedEventIndex(i);
     }
+
+    setIsAnimating(false);
+    setIsPlaying(false);
   }, [onEdgeAnimationComplete]);
 
   const handleRun = useCallback(async () => {
@@ -438,170 +484,6 @@ export default function FlowCanvas() {
     setIsPlaying(false);
   }, [playEvents]);
 
-  // HYBRID PLAYBACK ENGINE - playStep for animation
-  const playStep = useCallback(async (index, continueFlow = false) => {
-    if (index >= events.length || index < 0) return;
-    
-    setIsAnimating(true);
-
-    const event = events[index];
-
-    // For play button: continue flow without reconstruction
-    if (continueFlow) {
-      const e = event;
-
-      if (e.type === "CALL" && e.parentId) {
-        // Wait for parent to be active (causality)
-        while (!activeNodesRef.current.has(e.parentId)) {
-          await new Promise(res => setTimeout(res, 10));
-        }
-
-        const edgeId = `${e.parentId}-${e.id}`;
-
-        // ADD edge instead of replacing
-        setActiveEdges(prev => new Set([...prev, edgeId]));
-
-        await new Promise(res => setTimeout(res, EDGE_DURATION));
-
-        // Activate node
-        setActiveNodes(prev => {
-          const newSet = new Set([...prev, e.id]);
-          activeNodesRef.current = newSet;
-          return newSet;
-        });
-      }
-
-      if (e.type === "RETURN" && e.parentId) {
-        // For return edges, wait for child node to be active
-        while (!activeNodesRef.current.has(e.id)) {
-          await new Promise(res => setTimeout(res, 10));
-        }
-
-        const edgeId = `${e.id}-${e.parentId}-return`;
-
-        // Mark return animation
-        setEdges(prev =>
-          prev.map(edge =>
-            edge.id === edgeId
-              ? {
-                  ...edge,
-                  data: {
-                    ...edge.data,
-                    isReturning: true,
-                    value: e.value
-                  }
-                }
-              : edge
-          )
-        );
-
-        setActiveEdges(prev => new Set([...prev, edgeId]));
-
-        await new Promise(res => setTimeout(res, EDGE_DURATION));
-
-        // Propagate value
-        setNodeValues(prev => {
-          const updated = {
-            ...prev,
-            [e.parentId]: (prev[e.parentId] || 0) + e.value
-          };
-          nodeValuesRef.current = updated;
-          return updated;
-        });
-      }
-    } else {
-      // For slider/click: reconstruct state
-      const prevState = projectState(events, index - 1);
-
-      // Apply base state FIRST
-      setNodes(prevState.nodes);
-      setEdges(prevState.edges);
-      setNodeValues(prevState.nodeValues);
-      setActiveNodes(prevState.activeNodes);
-
-      // Reset activeEdges completely
-      setActiveEdges(new Set());
-
-      // Now animate ONLY current event
-      if (event.type === "CALL") {
-        const edgeId = `${event.parentId}-${event.id}`;
-        
-        setActiveEdges(new Set([edgeId])); // ONLY current edge
-        
-        await new Promise(res => setTimeout(res, EDGE_DURATION));
-        
-        setActiveNodes(prev => new Set([...prev, event.id]));
-      }
-
-      if (event.type === "RETURN") {
-        const edgeId = `${event.id}-${event.parentId}-return`;
-
-        // mark edge as returning
-        setEdges(prev =>
-          prev.map(edge =>
-            edge.id === edgeId
-              ? {
-                  ...edge,
-                  data: {
-                    ...edge.data,
-                    isReturning: true,
-                    value: event.value
-                  }
-                }
-              : edge
-          )
-        );
-
-        setActiveEdges(new Set([edgeId])); // ONLY current edge
-
-        await new Promise(res => setTimeout(res, EDGE_DURATION));
-
-        // update value AFTER animation
-        setNodeValues(prev => ({
-          ...prev,
-          [event.parentId]: (prev[event.parentId] || 0) + event.value
-        }));
-      }
-    }
-
-    setIsAnimating(false);
-  }, [events]);
-
-  // CORE PLAYBACK ENGINE - Async loop with playStep
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    let cancelled = false;
-
-    async function run() {
-      console.log("PLAY LOOP START", currentIndex);
-      let index = currentIndex; // local mutable state
-
-      while (!cancelled && index < events.length - 1) {
-        const nextIndex = index + 1;
-
-        await playStep(nextIndex, true);
-
-        if (cancelled) return;
-
-        index = nextIndex; // update local index
-        setCurrentIndex(index);
-
-        await new Promise(res => setTimeout(res, playSpeed));
-      }
-
-      if (!cancelled) {
-        setIsPlaying(false);
-      }
-    }
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isPlaying]);
-
   // STATE APPLICATION - Only for non-playing scenarios (slider, click, rewind)
   useEffect(() => {
     if (events.length === 0 || isPlaying === true || isAnimating === true) return;
@@ -618,20 +500,21 @@ export default function FlowCanvas() {
 
   // TIMELINE CONTROLS
   const handlePlay = () => {
-    // Initialize state for play mode if needed
-    if (currentIndex === 0) {
-      // Start from beginning - set up initial state
-      const rootEvent = events.find(e => e.type === "CALL" && e.parentId === null);
-      if (rootEvent) {
-        setActiveNodes(new Set([rootEvent.id]));
-        setActiveEdges(new Set());
-      }
-    }
+    if (events.length === 0) return;
+
+    runIdRef.current += 1;
+    const currentRunId = runIdRef.current;
+
     setIsPlaying(true);
+    setCurrentIndex(0);
+    setSelectedEventIndex(0);
+
+    playEvents(events, currentRunId);
   };
 
   const handlePause = () => {
     setIsPlaying(false);
+    runIdRef.current += 1;
   };
 
   const handleRewind = () => {
@@ -676,7 +559,6 @@ export default function FlowCanvas() {
   useEffect(() => {
     handleRun();
   }, [handleRun]);
-
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
       {/* Main Content Area */}
@@ -738,7 +620,7 @@ export default function FlowCanvas() {
             {/* Timeline Controls */}
             <div style={{ marginBottom: '15px' }}>
               <div style={{ color: '#00ffcc', fontSize: '12px', fontWeight: 'bold', marginBottom: '8px' }}>
-                ⏱️ Timeline Controls
+                 Timeline Controls
               </div>
               
               {/* Play/Pause and Step Controls */}
@@ -799,7 +681,7 @@ export default function FlowCanvas() {
               {/* Speed Controls */}
               <div style={{ marginBottom: '10px' }}>
                 <div style={{ color: '#fff', fontSize: '11px', marginBottom: '5px' }}>
-                  ⚡ Speed: {playSpeed}ms
+                   Speed: {playSpeed}ms
                 </div>
                 <div style={{ display: 'flex', gap: '5px' }}>
                   <button
@@ -850,7 +732,7 @@ export default function FlowCanvas() {
               {/* Timeline Slider */}
               <div style={{ marginBottom: '10px' }}>
                 <div style={{ color: '#fff', fontSize: '11px', marginBottom: '5px' }}>
-                  📚 Timeline: {currentIndex} / {Math.max(0, events.length - 1)}
+                   Timeline: {currentIndex} / {Math.max(0, events.length - 1)}
                 </div>
                 <input
                   type="range"
