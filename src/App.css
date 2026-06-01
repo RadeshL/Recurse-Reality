@@ -1,10 +1,360 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: radial-gradient(circle at top left, rgba(79, 196, 69, 0.24), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(79, 196, 69, 0.16), transparent 32%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.96), rgba(2, 2, 2, 1));
+}
 
-body {
+.hero-layout {
+  position: relative;
+  width: 100%;
+}
+
+.site-header {
+  display: inline-flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 26px;
+  gap: 320px;
+  max-width: 1000px;
+  width: fit-content;
+  min-width: min(100%, 420px);
+  margin: 100 auto;
+  background: transparent;
+  border-radius: 32px;
+  border: none;
+  box-shadow: none;
+  position: relative;
+  z-index: 2;
+}
+
+.hero-section {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+  max-width: 980px;
+  width: min(100%, 980px);
+  margin: 24px auto 0;
+  padding: 60px 64px 56px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: #4fc445;
+  color: #000;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.brand-title {
   margin: 0;
-  padding: 0;
-  background-color: #000;
-  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e7e4e4;
+}
+
+
+.nav-links {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.nav-links a {
+  color: #4a4949;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.nav-links a:hover {
+  color: #4fc445;
+}
+
+.hero-copy,
+.hero-panel,
+.section-copy,
+.features-grid,
+.footer-section {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+}
+
+.eyebrow,
+.section-eyebrow,
+.footer-eyebrow,
+.panel-label {
+  color: #4fc445;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  color: #f7f7f7;
+}
+
+h1 {
+  font-size: clamp(2.8rem, 5vw, 4.5rem);
+  line-height: 0.95;
+}
+
+.hero-description,
+.section-copy p,
+.feature-card p,
+.footer-section p {
+  max-width: 680px;
+  color: #d9d9d9;
+  line-height: 1.8;
+  font-size: 1.05rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.6rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  font-weight: 700;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, background 0.24s ease;
+}
+
+.button-primary {
+  background: #4fc445;
+  color: #000;
+}
+
+.button-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f7f7f7;
+  border-color: rgba(79, 196, 69, 0.4);
+}
+
+.button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 45px rgba(79, 196, 69, 0.15);
+}
+
+.hero-panel {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(79, 196, 69, 0.16);
+  border-radius: 28px;
+  padding: 32px;
+  backdrop-filter: blur(18px);
+}
+
+.panel-header {
+  color: #f7f7f7;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(79, 196, 69, 0.12);
+  padding-bottom: 16px;
+}
+
+.panel-card {
+  padding: 20px 22px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.panel-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #f7f7f7;
+  font-size: 1.04rem;
+}
+
+.panel-highlight {
+  background: #4fc445;
+  color: #000;
+  border-color: transparent;
+}
+
+.section {
+  padding: 56px 64px;
+}
+
+.about-section {
+  display: grid;
+  gap: 40px;
+}
+
+.architecture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.architecture-card,
+.feature-card {
+  border-radius: 24px;
+  padding: 28px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(79, 196, 69, 0.12);
+}
+
+.architecture-card {
+  color: #d9d9d9;
+}
+
+.features-section {
+  padding-top: 0;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.feature-card h3 {
+  margin-bottom: 14px;
+  font-size: 1.25rem;
+}
+
+.feedback-section {
+  display: grid;
+  gap: 28px;
+  padding-top: 0;
+  margin-top: 24px;
+}
+
+.feedback-form {
+  display: grid;
+  gap: 18px;
+  max-width: 840px;
+  margin-top: 16px;
+}
+
+.feedback-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.feedback-form input,
+.feedback-form textarea {
+  width: 100%;
+  border: 1px solid rgba(79, 196, 69, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f7f7f7;
+  padding: 16px 18px;
+  font: inherit;
+  outline: none;
+}
+
+.feedback-form input::placeholder,
+.feedback-form textarea::placeholder {
+  color: rgba(247, 247, 247, 0.6);
+}
+
+.feedback-form textarea {
+  resize: vertical;
+}
+
+.feedback-form button {
+  width: fit-content;
+  padding: 1rem 1.8rem;
+}
+
+@media (max-width: 980px) {
+  .feedback-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.feature-card p {
+  margin: 0;
+}
+
+.footer-section {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 32px 64px 48px;
+  border-top: 1px solid rgba(79, 196, 69, 0.12);
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+}
+
+.footer-links a {
+  color: #d9d9d9;
+  text-decoration: none;
+  transition: color 0.24s ease;
+}
+
+.footer-links a:hover {
+  color: #4fc445;
+}
+
+@media (max-width: 980px) {
+  .hero-section,
+  .section,
+  .footer-section {
+    padding-left: 28px;
+    padding-right: 28px;
+  }
+
+  .hero-section {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding-top: 64px;
+  }
+
+  .architecture-grid,
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
 }
